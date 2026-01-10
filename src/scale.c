@@ -12,6 +12,7 @@
 #include "scale.h"
 #include "common.h"
 
+extern scale_handle_t generic_scale_drv_handle;
 extern scale_handle_t and_fxi_scale_handle;
 extern scale_handle_t steinberg_scale_handle;
 extern scale_handle_t ussolid_scale_handle;
@@ -62,6 +63,11 @@ void set_scale_driver(scale_driver_t scale_driver) {
         case SCALE_DRIVER_RADWAG_PS_R2:
         {
             scale_config.scale_handle = &radwag_ps_r2_scale_handle;
+            break;
+        }
+        case SCALE_DRIVER_GENERIC_DRV:
+        {
+            scale_config.scale_handle = &generic_scale_drv_handle;
             break;
         }
         default:
