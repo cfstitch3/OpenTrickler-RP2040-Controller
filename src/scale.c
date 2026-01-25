@@ -14,12 +14,12 @@
 
 extern scale_handle_t and_fxi_scale_handle;
 extern scale_handle_t steinberg_scale_handle;
-extern scale_handle_t sartorius_scale_handle;
+extern scale_handle_t ussolid_scale_handle;
 extern scale_handle_t gng_scale_handle;
 extern scale_handle_t jm_science_scale_handle;
 extern scale_handle_t creedmoor_scale_handle;
 extern scale_handle_t radwag_ps_r2_scale_handle;
-extern scale_handle_t ussolid_scale_handle;
+extern scale_handle_t sartorius_scale_handle;
 
 scale_config_t scale_config;
 
@@ -45,9 +45,9 @@ void set_scale_driver(scale_driver_t scale_driver) {
             scale_config.scale_handle = &gng_scale_handle;
             break;
         }
-        case SCALE_DRIVER_SARTORIUS:
+        case SCALE_DRIVER_USSOLID_JFDBS:
         {
-            scale_config.scale_handle = &sartorius_scale_handle;
+            scale_config.scale_handle = &ussolid_scale_handle;
             break;
         }
         case SCALE_DRIVER_JM_SCIENCE:
@@ -65,14 +65,14 @@ void set_scale_driver(scale_driver_t scale_driver) {
             scale_config.scale_handle = &radwag_ps_r2_scale_handle;
             break;
         }
+        case SCALE_DRIVER_SARTORIUS:
+        {
+            scale_config.scale_handle = &sartorius_scale_handle;
+            break;
+        }
         default:
             assert(false);
             break;
-        case SCALE_DRIVER_USSOLID_JFDBS:
-        {
-            scale_config.scale_handle = &ussolid_scale_handle;
-            break;
-        }
     }
 }
 
@@ -148,7 +148,7 @@ bool scale_init() {
 
         scale_config.persistent_config.scale_data_rev = EEPROM_SCALE_DATA_REV;
         scale_config.persistent_config.scale_driver = SCALE_DRIVER_AND_FXI;
-        scale_config.persistent_config.scale_baudrate = BAUDRATE_9600;
+        scale_config.persistent_config.scale_baudrate = BAUDRATE_19200;
 
         // Write data back
         is_ok = scale_config_save();
