@@ -19,6 +19,7 @@ extern scale_handle_t gng_scale_handle;
 extern scale_handle_t jm_science_scale_handle;
 extern scale_handle_t creedmoor_scale_handle;
 extern scale_handle_t radwag_ps_r2_scale_handle;
+extern scale_handle_t sartorius_scale_handle;
 
 scale_config_t scale_config;
 
@@ -62,6 +63,11 @@ void set_scale_driver(scale_driver_t scale_driver) {
         case SCALE_DRIVER_RADWAG_PS_R2:
         {
             scale_config.scale_handle = &radwag_ps_r2_scale_handle;
+            break;
+        }
+        case SCALE_DRIVER_SARTORIUS:
+        {
+            scale_config.scale_handle = &sartorius_scale_handle;
             break;
         }
         default:
@@ -116,6 +122,9 @@ const char * get_scale_driver_string() {
         case SCALE_DRIVER_RADWAG_PS_R2:
             scale_driver_string = "Radwag PS R2";
             break;
+        case SCALE_DRIVER_SARTORIUS:
+            scale_driver_string = "Sartorius";
+            break;
         default:
             break;
     }
@@ -151,6 +160,9 @@ bool scale_init() {
 
     // Initialize UART
     uart_init(SCALE_UART, get_scale_baudrate(scale_config.persistent_config.scale_baudrate));
+    
+    // Set UART format: 7 data bits, 1 stop bit, no parity
+    uart_set_format(SCALE_UART, 7, 1, UART_PARITY_NONE);
 
     gpio_set_function(SCALE_UART_TX, GPIO_FUNC_UART);
     gpio_set_function(SCALE_UART_RX, GPIO_FUNC_UART);
