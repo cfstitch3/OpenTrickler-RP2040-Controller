@@ -168,7 +168,7 @@ bool scale_init() {
     uart_init(SCALE_UART, get_scale_baudrate(scale_config.persistent_config.scale_baudrate));
     
     // Set UART format: 7 data bits, 1 stop bit, no parity
-    uart_set_format(SCALE_UART, 7, 1, UART_PARITY_NONE);
+    uart_set_format(SCALE_UART, 7, 1, UART_PARITY_EVEN);
 
     gpio_set_function(SCALE_UART_TX, GPIO_FUNC_UART);
     gpio_set_function(SCALE_UART_RX, GPIO_FUNC_UART);
