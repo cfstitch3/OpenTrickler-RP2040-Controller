@@ -7,7 +7,7 @@
 #include "neopixel_led.h"
 
 
-#define EEPROM_CHARGE_MODE_DATA_REV                     8              // 16 byte 
+#define EEPROM_CHARGE_MODE_DATA_REV                     9              // 16 byte 
 
 #define WEIGHT_STRING_LEN 8
 
@@ -27,6 +27,7 @@ typedef struct {
 
     float set_point_sd_margin;
     float set_point_mean_margin;
+    float coarse_stop_gate_ratio;   // 0.0=open, 1.0=close
 
     decimal_places_t decimal_places;
 
