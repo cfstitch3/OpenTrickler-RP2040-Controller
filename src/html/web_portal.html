@@ -84,23 +84,20 @@
                     </div>
                 </div>
             </section>
+			<div class="h-8"></div>
 
             <div class="grid grid-cols-1 gap-2 px-4">
-                <div class="divider">General Control</div>
+                <div class="divider">Scale Control</div>
                 <div class="grid grid-cols-1 gap-2">
                     <button class="btn btn-neutral" onclick="scaleForceZero()">Scale Zero</button>
-
-                    <div class="grid grid-cols-2 gap-2">
-                        <button class="btn btn-neutral" onclick="servoGateSetState(2)">Gate Open</button>
-                        <button class="btn btn-neutral" onclick="servoGateSetState(1)">Gate Close</button>
-                    </div>
+					<div class="h-8"></div>
 
                     <!-- Gate Ratio Control -->
                     <div class="grid grid-cols-1 gap-2">
-                        <div class="divider">Gate Ratio</div>
-
-                        <span class="label-text">0.000 = Open &nbsp;&nbsp; 1.000 = Close</span>
-
+                        <div class="divider">Gate Control</div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-10">    
+                        
                         <input id="servoGateRatioSlider"
                                type="range"
                                min="0"
@@ -119,23 +116,23 @@
                                    value="0.500"
                                    class="input input-bordered input-primary"
                                    oninput="onServoGateRatioNumberInput(); debouncedServoGateRatioSendFromNumber();" />
+                            
 
                             <button class="btn btn-primary"
                                     onclick="servoGateApplyRatioFromUi()">
                                 Set
                             </button>
-
-                            <button class="btn btn-neutral"
-                                    onclick="servoGateSetRatio(0.500)">
-                                0.500
-                            </button>
-                        </div>
-
-                        <div class="grid grid-cols-4 gap-2">
-                            <button class="btn btn-neutral" onclick="servoGateSetRatio(0.000)">Open</button>
+						</div>
+						<div class="grid grid-cols-1 gap-2"><span class="label-text">0.000 = Open &nbsp;&nbsp; 1.000 = Close</span></div>
+                            
+                        
+                    </div>
+                        <div class="grid grid-cols-5 gap-2">
+                            <button class="btn btn-neutral" onclick="servoGateSetState(2)">Open</button>
                             <button class="btn btn-neutral" onclick="servoGateSetRatio(0.250)">0.250</button>
+                            <button class="btn btn-neutral" onclick="servoGateSetRatio(0.500)">0.500</button>
                             <button class="btn btn-neutral" onclick="servoGateSetRatio(0.750)">0.750</button>
-                            <button class="btn btn-neutral" onclick="servoGateSetRatio(1.000)">Close</button>
+                            <button class="btn btn-neutral" onclick="servoGateSetState(1)">Close</button>
                         </div>
 
                         <div class="text-xs opacity-70">
