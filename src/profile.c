@@ -11,43 +11,41 @@ extern void swuart_calcCRC(uint8_t* datagram, uint8_t datagramLength);
 
 
 const profile_t default_ar_2208_profile = {
-    .rev = 0,
     .compatibility = 0,
 
     .name = "AR2208,gr",
 
     .coarse_kp = 0.025f,
     .coarse_ki = 0.0f,
-    .coarse_kd = 0.25f,
+    .coarse_kd = 0.3f,
     .coarse_min_flow_speed_rps = 0.1f,
     .coarse_max_flow_speed_rps = 5.0f,
 
     .fine_kp = 2.0f,
     .fine_ki = 0.0f,
     .fine_kd = 10.0f,
-    .fine_min_flow_speed_rps = 0.1f,
-    .fine_max_flow_speed_rps = 3.0f,
+    .fine_min_flow_speed_rps = 0.08f,
+    .fine_max_flow_speed_rps = 5.0f,
 };
 
 
 const profile_t default_ar_2209_profile = {
-    .rev = 0,
     .compatibility = 0,
 
     .name = "AR2209,gr",
 
-    .coarse_kp = 0.02f,
+    .coarse_kp = 0.05f,
     .coarse_ki = 0.0f,
-    .coarse_kd = 0.30f,
+    .coarse_kd = 0.3f,
     .coarse_min_flow_speed_rps = 0.1f,
-    .coarse_max_flow_speed_rps = 5.0f,
+    .coarse_max_flow_speed_rps = 8.0f,
 
-    .fine_kp = 2.0f,
+    .fine_kp = 0.8f,
     .fine_ki = 0.0f,
-    .fine_kd = 10.0f,
+    .fine_kd = 15.0f,
 
     .fine_min_flow_speed_rps = 0.08f,
-    .fine_max_flow_speed_rps = 5.0f,
+    .fine_max_flow_speed_rps = 2.0f,
 };
 
 
@@ -57,10 +55,9 @@ bool profile_data_save() {
     bool is_ok = eeprom_write(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
     if (!is_ok) {
         printf("Unable to write to EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
-        return false;
     }
 
-    return true;
+    return is_ok;
 }
 
 
@@ -69,15 +66,17 @@ bool profile_data_init() {
 
     // Read profile index table
     memset(&profile_data, 0x0, sizeof(eeprom_profile_data_t));
-    is_ok = eeprom_read(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
+    
+    eeprom_error_code_e error_code = eeprom_read(EEPROM_PROFILE_DATA_BASE_ADDR, (uint8_t *) &profile_data, sizeof(eeprom_profile_data_t));
 
-    if (!is_ok) {
-        printf("Unable to read from EEPROM at address %x\n", EEPROM_PROFILE_DATA_BASE_ADDR);
+    if (error_code == EEPROM_ERROR_FAILED_TO_READ) {
+        printf("Unable to read from EEPROM at address %x, error code: %d\n", EEPROM_PROFILE_DATA_BASE_ADDR, error_code);
         return false;
     }
 
-    if (profile_data.profile_data_rev != EEPROM_PROFILE_DATA_REV) {
-        profile_data.profile_data_rev = EEPROM_PROFILE_DATA_REV;
+    if (error_code == EEPROM_ERROR_CRC_MISMATCH) {
+        printf("EEPROM profile data CRC32 mismatch, data might be corrupted or updated\n");
+
         // Set default selected profile
         profile_data.current_profile_idx = 0;
 
@@ -132,7 +131,7 @@ void profile_update_checksum() {
 bool http_rest_profile_config(struct fs_file *file, int num_params, char *params[], char *values[]) {
     // Mappings:
     // pf (int): profile index
-    // p0 (int): rev
+    // p0 (int): rev (deprecated)
     // p1 (int): compatibility
     // p2 (str): name
     // p3 (float): coarse_kp
@@ -169,7 +168,8 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
         // Control
         for (int idx = 0; idx < num_params; idx += 1) {
             if (strcmp(params[idx], "p0") == 0) {
-                current_profile->rev = strtol(values[idx], NULL, 10);
+                // current_profile->rev = strtol(values[idx], NULL, 10);
+                // FIXME: rev is deprecated
             }
             else if (strcmp(params[idx], "p1") == 0) {
                 current_profile->compatibility = strtol(values[idx], NULL, 10);
@@ -223,7 +223,7 @@ bool http_rest_profile_config(struct fs_file *file, int num_params, char *params
                  "{\"pf\":%d,\"p0\":%ld,\"p1\":%ld,\"p2\":\"%s\",\"p3\":%0.3f,\"p4\":%0.3f,\"p5\":%0.3f,\"p6\":%0.3f,\"p7\":%0.3f,\"p8\":%0.3f,\"p9\":%0.3f,\"p10\":%0.3f,\"p11\":%0.3f,\"p12\":%0.3f}",
                  http_json_header,
                  profile_idx, 
-                 current_profile->rev,
+                 0,  // current_profile->rev,  rev is deprecated
                  current_profile->compatibility,
                  current_profile->name,
                  current_profile->coarse_kp,
