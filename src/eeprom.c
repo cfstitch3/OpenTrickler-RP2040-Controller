@@ -96,19 +96,17 @@ bool eeprom_init(void) {
     cat24c256_eeprom_init();
 
     // Read data revision, if match then move forward
-    is_ok = eeprom_read(EEPROM_METADATA_BASE_ADDR, (uint8_t *) &metadata, sizeof(eeprom_metadata_t));
-    if (!is_ok) {
+    eeprom_error_code_e error_code = eeprom_read(EEPROM_METADATA_BASE_ADDR, (uint8_t *) &metadata, sizeof(eeprom_metadata_t));
+    if (error_code == EEPROM_ERROR_FAILED_TO_READ) {
         printf("Unable to read from EEPROM at address %x\n", EEPROM_METADATA_BASE_ADDR);
         return false;
     }
 
-    if (metadata.eeprom_metadata_rev != EEPROM_METADATA_REV) {
-        // Do some data migration or erase the data
-        // printf("EEPROM data revision: %x, Firmware EEPROM data revision: %x, Requires migration\n", metadata.eeprom_metadata_rev, EEPROM_METADATA_REV);
-
-        // Update some data
-        metadata.eeprom_metadata_rev = EEPROM_METADATA_REV;
-
+    // Validate CRC32
+    if (error_code == EEPROM_ERROR_CRC_MISMATCH) {
+        printf("EEPROM metadata CRC32 mismatch, data might be corrupted or updated\n");
+        
+        // Fill with default error
         // Generate id
         char buf[9];
         snprintf(buf, sizeof(buf), "%08lX", rnd() & 0xffffffff);
@@ -146,15 +144,42 @@ static inline void _give_mutex(BaseType_t scheduler_state) {
     }
 }
 
-bool eeprom_read(uint16_t data_addr, uint8_t * data, size_t len) {
+eeprom_error_code_e eeprom_read(uint16_t data_addr, uint8_t * data, size_t len) {
     BaseType_t scheduler_state = xTaskGetSchedulerState();
     bool is_ok;
 
+    // Preapre the rx buffer
+    size_t stored_size = len + sizeof(uint32_t);
+    uint8_t * raw_data = malloc(stored_size);
+
     _take_mutex(scheduler_state);
 
-    is_ok = cat24c256_read(data_addr, data, len);
+    is_ok = cat24c256_read(data_addr, raw_data, stored_size);
 
     _give_mutex(scheduler_state);
+
+    // Unable to read data, return failure
+    if (!is_ok) {
+        goto cleanup;
+    }
+
+    // Validate CRC32
+    uint32_t received_crc32 = *((uint32_t *) raw_data);
+    uint32_t calculated_crc32 = crc32_wrapper(raw_data, stored_size, sizeof(received_crc32));
+
+    // Validate 
+    if (received_crc32 != calculated_crc32) {
+        printf("EEPROM CRC32 mismatch at address %x, received: %08lX, calculated: %08lX\n", data_addr, received_crc32, calculated_crc32);
+        is_ok = false;
+        goto cleanup;
+    }
+    else {
+        // Copy data to output buffer
+        memcpy(data, raw_data + sizeof(received_crc32), len);
+    }
+
+cleanup:
+    free(raw_data);
 
     return is_ok;
 }
@@ -164,11 +189,24 @@ bool eeprom_write(uint16_t data_addr, uint8_t * data, size_t len) {
     BaseType_t scheduler_state = xTaskGetSchedulerState();
     bool is_ok;
 
+    // Preapre the tx buffer
+    size_t stored_size = len + sizeof(uint32_t);
+    uint8_t * raw_data = malloc(stored_size);
+
+    // Calculate CRC32 and prepend to the data
+    uint32_t calculated_crc32 = crc32_wrapper(data, len, 0);
+    *((uint32_t *) raw_data) = calculated_crc32;  // wrtie crc32 to the buffer
+    
+    // Copy the rest of data to the buffer
+    memcpy(raw_data + sizeof(calculated_crc32), data, len);
+
     _take_mutex(scheduler_state);
 
-    is_ok = cat24c256_write(data_addr, data, len);
+    is_ok = cat24c256_write(data_addr, raw_data, stored_size);
 
     _give_mutex(scheduler_state);
+
+    free(raw_data);
 
     return is_ok;
 }
