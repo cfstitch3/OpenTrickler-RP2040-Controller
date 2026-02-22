@@ -273,24 +273,25 @@ void charge_mode_wait_for_complete() {
             break;
         }
 
-        // Coarse trickler move condition
-        else if (error < charge_mode_config.eeprom_charge_mode_data.coarse_stop_threshold && should_coarse_trickler_move) {
+                // Coarse trickler move condition
+        else if (error < charge_mode_config.eeprom_charge_mode_data.coarse_stop_threshold &&
+                 should_coarse_trickler_move) {
+
             should_coarse_trickler_move = false;
             motor_set_speed(SELECT_COARSE_TRICKLER_MOTOR, 0);
 
-            // NEW: When the coarse trickler stops, move the servo gate to a half position
-        // Ratio convention: 0.0 = open, 1.0 = close
-        if (servo_gate.gate_state != GATE_DISABLED) {
-            float r = charge_mode_config.eeprom_charge_mode_data.coarse_stop_gate_ratio;
-            if (r < 0.0f) r = 0.0f;
-            if (r > 1.0f) r = 1.0f;
-            servo_gate_set_ratio(r, false);
-            // don't block the charge loop
-        }
+            // NEW: When the coarse trickler stops, move the servo gate to a configured ratio
+            // Ratio convention: 0.0 = open, 1.0 = close
+            if (servo_gate.gate_state != GATE_DISABLED) {
+                float r = charge_mode_config.eeprom_charge_mode_data.coarse_stop_gate_ratio;
+                if (r < 0.0f) r = 0.0f;
+                if (r > 1.0f) r = 1.0f;
+                servo_gate_set_ratio(r, false); // don't block the charge loop
+            }
 
-    // TODO: When tuning off the coarse trickler, also move reverse to back off some powder
-}
+            // TODO: When turning off the coarse trickler, also move reverse to back off some powder
         }
+    }
 
         // Update PID variables
         float elapse_time_ms = (current_sample_tick - last_sample_tick) / portTICK_RATE_MS;
@@ -347,7 +348,7 @@ void charge_mode_wait_for_complete() {
     }
 
     charge_mode_config.charge_mode_state = CHARGE_MODE_WAIT_FOR_CUP_REMOVAL;
-}
+
 
 void charge_mode_wait_for_cup_removal() {
     // Update current status
