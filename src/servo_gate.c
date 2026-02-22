@@ -132,7 +132,7 @@ void servo_gate_control_task(void * p) {
                     new_open_ratio = prev_open_ratio;
                     break;
             }
-
+        }
         // First time: just set immediately if we have a valid ratio
         if (prev_open_ratio < 0.0f) {
             if (new_open_ratio < 0.0f) {
@@ -156,26 +156,27 @@ void servo_gate_control_task(void * p) {
                  uint32_t ramp_time_us = (uint32_t)(fabsf(delta / speed) * 1e6f);
 
                 if (ramp_time_us < 1000) {
-                    // Too small to bother with fine ramp
-                    _servo_gate_set_current_state(new_open_ratio);
-                } else {
-                    uint32_t start_time = time_us_32();
-                    uint32_t stop_time  = start_time + ramp_time_us;
+                // Too small to bother with fine ramp
+                _servo_gate_set_current_state(new_open_ratio);
+                } 
+                    else {
+                        uint32_t start_time = time_us_32();
+                        uint32_t stop_time  = start_time + ramp_time_us;
 
-                    while (true) {
-                        uint32_t current_time = time_us_32();
-                        if (current_time > stop_time) {
-                            break;
+                        while (true) {
+                            uint32_t current_time = time_us_32();
+                            if (current_time > stop_time) {
+                                break;
+                            }
+
+                            float percentage = (current_time - start_time) / (float) ramp_time_us;
+                            float current_ratio = prev_open_ratio + delta * percentage;
+
+                            _servo_gate_set_current_state(current_ratio);
                         }
 
-                        float percentage = (current_time - start_time) / (float) ramp_time_us;
-                        float current_ratio = prev_open_ratio + delta * percentage;
-
-                        _servo_gate_set_current_state(current_ratio);
+                        _servo_gate_set_current_state(new_open_ratio);
                     }
-
-                    _servo_gate_set_current_state(new_open_ratio);
-                }
             }
             
         }
@@ -195,6 +196,7 @@ void servo_gate_control_task(void * p) {
         // Optional if you added this field to servo_gate_t:
         // servo_gate.gate_open_ratio = prev_open_ratio;
     }
+    
 }
 
 
