@@ -282,13 +282,13 @@ bool http_rest_servo_gate_state(struct fs_file *file, int num_params, char *para
             gate_state_t state = (gate_state_t) atoi(values[idx]);
             servo_gate_set_state(state, false);
         }
-    }
+    
 
     else if (strcmp(params[idx], "r0") == 0) {
             float ratio = strtof(values[idx], NULL);
             servo_gate_set_ratio(ratio, false);
         }
-
+    }
     // Response
     // NOTE: we don't currently return the true live ratio unless you store it (see comments above).
     snprintf(servo_gate_json_buffer, 
