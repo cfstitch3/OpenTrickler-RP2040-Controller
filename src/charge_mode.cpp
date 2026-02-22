@@ -291,7 +291,7 @@ void charge_mode_wait_for_complete() {
 
             // TODO: When turning off the coarse trickler, also move reverse to back off some powder
         }
-    }
+    
 
         // Update PID variables
         float elapse_time_ms = (current_sample_tick - last_sample_tick) / portTICK_RATE_MS;
@@ -348,7 +348,7 @@ void charge_mode_wait_for_complete() {
     }
 
     charge_mode_config.charge_mode_state = CHARGE_MODE_WAIT_FOR_CUP_REMOVAL;
-
+}
 
 void charge_mode_wait_for_cup_removal() {
     // Update current status
