@@ -40,7 +40,7 @@ const eeprom_charge_mode_data_t default_charge_mode_data = {
 
     .set_point_sd_margin = 0.02,
     .set_point_mean_margin = 0.02,
-    .coarse_stop_gate_ratio = 0.50f,   // NEW
+    .coarse_stop_gate_ratio = 0,   // NEW
     .decimal_places = DP_2,
 
     // Precharges
