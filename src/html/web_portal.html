@@ -100,15 +100,12 @@
 				<div class="grid grid-cols-3 gap-2"> 
 					<button class="btn btn-neutral" onclick="servoGateSetState(2)">Gate Open</button>
 					
-					<input id="servoGateRatioNumber"
-						   type="number"
-						   min="0"
-						   max="1"
-						   step="0.001"
-						   value="0.500"
-						   class="input input-bordered input-primary"
-						   oninput="onServoGateRatioNumberInput(); debouncedServoGateRatioSendFromNumber();" />
-
+                        <input id="servoGateRatioNumber"
+                            type="number"
+                            step="0.001"
+                            value="0.500"
+                            class="input input-bordered input-primary pointer-events-none"
+                            readonly />
 					
 					<button class="btn btn-neutral" onclick="servoGateSetState(1)">Gate Close</button>
 				</div>
@@ -1241,92 +1238,139 @@
             console.error("Error applying servo gate state");
         });
     }
-// --- Gate Ratio Support ---
-    function _clamp01(x) {
-        let v = Number(x);
-        if (Number.isNaN(v)) return null;
-        if (v < 0) v = 0;
-        if (v > 1) v = 1;
-        return v;
-    }
+// --- Gate Ratio Support (fixed: latest-wins, no pile-up, no UI feedback loop) ---
 
-    function _setGateRatioUi(r) {
-        const slider = document.getElementById("servoGateRatioSlider");
-        const number = document.getElementById("servoGateRatioNumber");
+function _clamp01(x) {
+    let v = Number(x);
+    if (Number.isNaN(v)) return null;
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    return v;
+}
 
-        if (slider) slider.value = String(Math.round(r * 1000));
-        if (number) number.value = r.toFixed(3);
-    }
+// Full sync (only use when source is NOT the slider)
+function _setGateRatioUi(r) {
+    const slider = document.getElementById("servoGateRatioSlider");
+    const number = document.getElementById("servoGateRatioNumber");
 
-    function servoGateSetRatio(ratio) {
-        const r = _clamp01(ratio);
-        if (r === null) return;
+    if (slider) slider.value = String(Math.round(r * 1000));
+    if (number) number.value = r.toFixed(3);
+}
 
-        _setGateRatioUi(r);
+// Lightweight sync for slider-drag path (avoid writing slider.value)
+function _setGateRatioNumberUi(r) {
+    const number = document.getElementById("servoGateRatioNumber");
+    if (number) number.value = r.toFixed(3);
+}
 
-        const uri = `/rest/servo_gate_state?r0=${encodeURIComponent(r.toFixed(3))}`;
+/**
+ * Latest-wins transport:
+ * - At most ONE fetch in flight.
+ * - If user moves again while in flight, we only keep the most recent ratio.
+ */
+let _gateSendInFlight = false;
+let _gatePendingRatio = null;
+
+// If you want the number box to be display-only, set it readonly in HTML and
+// delete the number-input pieces below.
+function _servoGateSendLatestWins(ratio, syncSliderUi = true) {
+    const r = _clamp01(ratio);
+    if (r === null) return;
+
+    // Update UI immediately (responsive)
+    // IMPORTANT: if source is slider drag, do NOT sync slider.value (avoid feedback loop)
+    if (syncSliderUi) _setGateRatioUi(r);
+    else _setGateRatioNumberUi(r);
+
+    // Keep only latest request
+    _gatePendingRatio = r;
+
+    if (_gateSendInFlight) return;
+    _gateSendInFlight = true;
+
+    const pump = () => {
+        const toSend = _gatePendingRatio;
+        _gatePendingRatio = null;
+
+        if (toSend === null) {
+            _gateSendInFlight = false;
+            return;
+        }
+
+        const uri = `/rest/servo_gate_state?r0=${encodeURIComponent(toSend.toFixed(3))}`;
 
         fetch(uri)
-        .then(response => {
-            return response.json();
-        })
-        .then(data => {
-            // If firmware returns r0 later, you can sync UI like:
-            // if (data["r0"] !== undefined) _setGateRatioUi(_clamp01(data["r0"]));
-        })
-        .catch(error => {
-            console.error("Error applying servo gate ratio");
-        });
-    }
+            .catch(() => {
+                console.error("Error applying servo gate ratio");
+            })
+            .finally(() => {
+                if (_gatePendingRatio !== null) pump();
+                else _gateSendInFlight = false;
+            });
+    };
 
-    function onServoGateRatioInput() {
-        const slider = document.getElementById("servoGateRatioSlider");
-        if (!slider) return;
+    pump();
+}
 
-        const r = parseInt(slider.value, 10) / 1000.0;
-        const rc = _clamp01(r);
-        if (rc === null) return;
+// Public API (used by buttons / number input / other non-slider sources)
+function servoGateSetRatio(ratio) {
+    _servoGateSendLatestWins(ratio, true);
+}
 
-        _setGateRatioUi(rc);
-    }
+// UI handlers
+function onServoGateRatioInput() {
+    const slider = document.getElementById("servoGateRatioSlider");
+    if (!slider) return;
 
-    function onServoGateRatioNumberInput() {
-        const number = document.getElementById("servoGateRatioNumber");
-        if (!number) return;
+    const r = parseInt(slider.value, 10) / 1000.0;
+    const rc = _clamp01(r);
+    if (rc === null) return;
 
-        const r = _clamp01(number.value);
-        if (r === null) return;
+    // Only update the number readout while dragging (no slider writeback)
+    _setGateRatioNumberUi(rc);
+}
 
-        _setGateRatioUi(r);
-    }
+function onServoGateRatioNumberInput() {
+    const number = document.getElementById("servoGateRatioNumber");
+    if (!number) return;
 
-    function servoGateApplyRatioFromUi() {
-        const number = document.getElementById("servoGateRatioNumber");
-        if (!number) return;
+    const r = _clamp01(number.value);
+    if (r === null) return;
 
-        servoGateSetRatio(number.value);
-    }
+    // Number input is NOT slider, so full sync is fine
+    _setGateRatioUi(r);
+}
 
-    // Debounced live sending (uses existing debounce())
-    function sendServoGateRatioFromSlider() {
-        const slider = document.getElementById("servoGateRatioSlider");
-        if (!slider) return;
+function servoGateApplyRatioFromUi() {
+    const number = document.getElementById("servoGateRatioNumber");
+    if (!number) return;
 
-        const r = parseInt(slider.value, 10) / 1000.0;
-        servoGateSetRatio(r);
-    }
-    const debouncedServoGateRatioSend = debounce(sendServoGateRatioFromSlider, 60);
+    servoGateSetRatio(number.value);
+}
 
-    function sendServoGateRatioFromNumber() {
-        const number = document.getElementById("servoGateRatioNumber");
-        if (!number) return;
+// Debounced sending
+function sendServoGateRatioFromSlider() {
+    const slider = document.getElementById("servoGateRatioSlider");
+    if (!slider) return;
 
-        const r = _clamp01(number.value);
-        if (r === null) return;
+    const r = parseInt(slider.value, 10) / 1000.0;
 
-        servoGateSetRatio(r);
-    }
-    const debouncedServoGateRatioSendFromNumber = debounce(sendServoGateRatioFromNumber, 120);
+    // Source is slider drag: do NOT write slider.value during send
+    _servoGateSendLatestWins(r, false);
+}
+const debouncedServoGateRatioSend = debounce(sendServoGateRatioFromSlider, 60);
+
+function sendServoGateRatioFromNumber() {
+    const number = document.getElementById("servoGateRatioNumber");
+    if (!number) return;
+
+    const r = _clamp01(number.value);
+    if (r === null) return;
+
+    servoGateSetRatio(r);
+}
+const debouncedServoGateRatioSendFromNumber = debounce(sendServoGateRatioFromNumber, 120);
+
     // Switch pages
     function onNavButtonClicked(button) {
         const sectionTrickler = document.getElementById("sectionTrickler");
