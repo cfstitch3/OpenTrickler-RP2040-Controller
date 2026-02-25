@@ -71,31 +71,14 @@ static void _servo_gate_set_current_state(float open_ratio) {
 }
 
 
-void servo_gate_set_state(gate_state_t state, bool block_wait) {
-    // Clear the semaphore state
-    xSemaphoreTake(servo_gate.move_ready_semphore, 0);
-
-    servo_gate_cmd_t cmd = {
-        .is_ratio = false,
-        .state = state,
-        .ratio = 0.0f
-    };
-
-    xQueueSend(servo_gate.control_queue, &cmd, portMAX_DELAY);
-
-    if (block_wait) {
-        xSemaphoreTake(servo_gate.move_ready_semphore, portMAX_DELAY);
-    }
-}
 
 void servo_gate_set_ratio(float ratio, bool block_wait) {
     // Clear the semaphore state
     xSemaphoreTake(servo_gate.move_ready_semphore, 0);
 
     servo_gate_cmd_t cmd = {
-        .is_ratio = true,
-        .state = GATE_DISABLED,
-        .ratio = clamp01(ratio)
+        .ratio = (ratio == SERVO_GATE_RATIO_DISABLED) ? SERVO_GATE_RATIO_DISABLED : clamp01(ratio),
+        .block_wait = block_wait
     };
 
     xQueueSend(servo_gate.control_queue, &cmd, portMAX_DELAY);
@@ -105,98 +88,83 @@ void servo_gate_set_ratio(float ratio, bool block_wait) {
     }
 }
 
-void servo_gate_control_task(void * p) {
+void servo_gate_control_task(void *p) {
     (void)p;
-    float prev_open_ratio = -1.0f;
+
+    const float UNKNOWN_RATIO = -2.0f;
+    float prev_open_ratio = UNKNOWN_RATIO;
 
     while (true) {
-      servo_gate_cmd_t cmd;
+        servo_gate_cmd_t cmd;
         xQueueReceive(servo_gate.control_queue, &cmd, portMAX_DELAY);
 
-        // Determine target ratio
-        float new_open_ratio = prev_open_ratio;
+        // --- DISABLE ---
+        if (cmd.ratio == SERVO_GATE_RATIO_DISABLED) {            
+            servo_gate.gate_state = GATE_DISABLED;
 
-        if (cmd.is_ratio) {
-            new_open_ratio = clamp01(cmd.ratio);
-        } else {
-            switch (cmd.state) {
-                case GATE_OPEN:
-                    new_open_ratio = 0.0f;
-                    break;
-                case GATE_CLOSE:
-                    new_open_ratio = 1.0f;
-                    break;
-                case GATE_DISABLED:
-                default:
-                    // Do nothing: keep prev ratio
-                    new_open_ratio = prev_open_ratio;
-                    break;
-            }
+            // Do NOT touch prev_open_ratio here (keeps last ratio for ramp continuity)
+            xSemaphoreGive(servo_gate.move_ready_semphore);
+            continue;
         }
-        // First time: just set immediately if we have a valid ratio
-        if (prev_open_ratio < 0.0f) {
-            if (new_open_ratio < 0.0f) {
-                // No prior ratio and got a DISABLED/do-nothing command; just acknowledge
-                xSemaphoreGive(servo_gate.move_ready_semphore);
-                continue;
-            }
+
+        // Normal ratio move
+        float new_open_ratio = clamp01(cmd.ratio);
+
+        // First valid move: set immediately
+        if (prev_open_ratio == UNKNOWN_RATIO) {
             _servo_gate_set_current_state(new_open_ratio);
-        }
-        else {
-             // If no actual change, don't waste time ramping
+        } else {
+            // If no actual change, skip ramp
             if (fabsf(new_open_ratio - prev_open_ratio) > 0.0001f) {
                 float delta = new_open_ratio - prev_open_ratio;
 
+                // open_ratio: 0=open, 1=closed
+                // delta < 0 => moving toward OPEN
                 float speed = (delta < 0.0f)
                     ? servo_gate.eeprom_servo_gate_config.shutter_open_speed_pct_s
                     : servo_gate.eeprom_servo_gate_config.shutter_close_speed_pct_s;
 
-                // Avoid divide-by-zero / insane ramp if speed is configured badly
                 if (speed < 0.0001f) speed = 0.0001f;
-                 uint32_t ramp_time_us = (uint32_t)(fabsf(delta / speed) * 1e6f);
+
+                uint32_t ramp_time_us = (uint32_t)(fabsf(delta / speed) * 1e6f);
 
                 if (ramp_time_us < 1000) {
-                // Too small to bother with fine ramp
-                _servo_gate_set_current_state(new_open_ratio);
-                } 
-                    else {
-                        uint32_t start_time = time_us_32();
-                        uint32_t stop_time  = start_time + ramp_time_us;
+                    _servo_gate_set_current_state(new_open_ratio);
+                } else {
+                    uint32_t start_time = time_us_32();
+                    uint32_t stop_time  = start_time + ramp_time_us;
 
-                        while (true) {
-                            uint32_t current_time = time_us_32();
-                            if (current_time > stop_time) {
-                                break;
-                            }
+                    while (true) {
+                        uint32_t current_time = time_us_32();
+                        if (current_time > stop_time) break;
 
-                            float percentage = (current_time - start_time) / (float) ramp_time_us;
-                            float current_ratio = prev_open_ratio + delta * percentage;
+                        float percentage = (current_time - start_time) / (float)ramp_time_us;
+                        float current_ratio = prev_open_ratio + delta * percentage;
 
-                            _servo_gate_set_current_state(current_ratio);
-                        }
-
-                        _servo_gate_set_current_state(new_open_ratio);
+                        _servo_gate_set_current_state(current_ratio);
                     }
+
+                    _servo_gate_set_current_state(new_open_ratio);
+                }
             }
+        }
+
+        // Update discrete reported state (optional but handy for UI)
+        if (new_open_ratio <= 0.0001f) {
+            servo_gate.gate_state = GATE_OPEN;
+        } else if (new_open_ratio >= 0.9999f) {
+            servo_gate.gate_state = GATE_CLOSE;
+        } else {
+            // In-between: choose what you want to report.
+            // Option A: keep previous discrete state
+            // Option B: leave as-is
             
         }
 
-        // Signal the motion is ready
-        xSemaphoreGive(servo_gate.move_ready_semphore);
-
-         // Update state tracking
-        if (cmd.is_ratio) {
-            // Keep the last discrete state or set it to disabled; your choice.
-            // I'd keep it as-is so Open/Close still reports correctly after custom moves.
-            // servo_gate.gate_state = servo_gate.gate_state;
-        } else {
-            servo_gate.gate_state = cmd.state;
-        }
         prev_open_ratio = new_open_ratio;
-        // Optional if you added this field to servo_gate_t:
-        // servo_gate.gate_open_ratio = prev_open_ratio;
+
+        xSemaphoreGive(servo_gate.move_ready_semphore);
     }
-    
 }
 
 
@@ -273,32 +241,34 @@ bool servo_gate_init() {
 
 
 bool http_rest_servo_gate_state(struct fs_file *file, int num_params, char *params[], char *values[]) {
-    // Mappings
-    // g0 (int): gate_state_t
-    // r0 (float): open ratio (0.0 = open, 1.0 = closed)
     static char servo_gate_json_buffer[96];
 
-    // Control
     for (int idx = 0; idx < num_params; idx += 1) {
         if (strcmp(params[idx], "g0") == 0) {
-            gate_state_t state = (gate_state_t) atoi(values[idx]);
-            servo_gate_set_state(state, false);
-        }
-    
+            gate_state_t state = (gate_state_t)atoi(values[idx]);
 
-    else if (strcmp(params[idx], "r0") == 0) {
+            float ratio = SERVO_GATE_RATIO_DISABLED;
+            switch (state) {
+                case GATE_OPEN:   ratio = SERVO_GATE_RATIO_OPEN; break;
+                case GATE_CLOSE:  ratio = SERVO_GATE_RATIO_CLOSED; break;
+                case GATE_DISABLED:
+                default:          ratio = SERVO_GATE_RATIO_DISABLED; break;
+            }
+
+            servo_gate_set_ratio(ratio, false);
+        }
+        else if (strcmp(params[idx], "r0") == 0) {
             float ratio = strtof(values[idx], NULL);
             servo_gate_set_ratio(ratio, false);
         }
     }
-    // Response
-    // NOTE: we don't currently return the true live ratio unless you store it (see comments above).
-    snprintf(servo_gate_json_buffer, 
+
+    snprintf(servo_gate_json_buffer,
              sizeof(servo_gate_json_buffer),
              "%s"
              "{\"g0\":%d}",
              http_json_header,
-             (int) servo_gate.gate_state);
+             (int)servo_gate.gate_state);
 
     size_t data_length = strlen(servo_gate_json_buffer);
     file->data = servo_gate_json_buffer;

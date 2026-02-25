@@ -11,24 +11,30 @@
 
 #define EEPROM_SERVO_GATE_CONFIG_REV                     1              // 16 byte 
 
+#define SERVO_GATE_RATIO_OPEN       (0.0f)
+#define SERVO_GATE_RATIO_CLOSED     (1.0f)
+#define SERVO_GATE_RATIO_DISABLED   (-1.0f)
+
 typedef enum {
     GATE_DISABLED = 0,
     GATE_CLOSE,
     GATE_OPEN,
 } gate_state_t;
+
 /**
- * Control queue payload:
- * - either a discrete gate_state (existing behavior)
- * - or a direct open ratio command (new behavior)
+ * Control queue payload (ratio-only)
  *
- * Ratio convention matches existing code:
- *   0.0 = OPEN
- *   1.0 = CLOSED
+ * Ratio convention:
+ *   0.0  = OPEN
+ *   1.0  = CLOSED
+ *  -1.0  = DISABLED
+ *
+ * Any value between 0.0 and 1.0 is proportional.
  */
+ 
 typedef struct {
-    bool is_ratio;       // true = ratio command, false = state command
-    gate_state_t state;  // used when is_ratio == false
-    float ratio;         // used when is_ratio == true (0.0..1.0)
+    float ratio;
+    bool block_wait;
 } servo_gate_cmd_t;
 
 typedef struct {
@@ -64,7 +70,6 @@ bool http_rest_servo_gate_state(struct fs_file *file, int num_params, char *para
 bool http_rest_servo_gate_config(struct fs_file *file, int num_params, char *params[], char *values[]);
 const char * gate_state_to_string(gate_state_t);
 
-void servo_gate_set_state(gate_state_t, bool);
 
 // NEW:
 void servo_gate_set_ratio(float ratio, bool block_wait);
