@@ -213,10 +213,9 @@ void charge_mode_wait_for_complete() {
     );
 
     // If the servo gate is used then it has to be opened
-    if (servo_gate.gate_state != GATE_DISABLED) {
-        servo_gate_set_state(GATE_OPEN, false);
+    if (servo_gate.eeprom_servo_gate_config.servo_gate_enable) {
+        servo_gate_set_ratio(SERVO_GATE_RATIO_OPEN, false);
     }
-
     // Update current status
     char target_weight_string[WEIGHT_STRING_LEN];
     float_to_string(target_weight_string, charge_mode_config.target_charge_weight, charge_mode_config.eeprom_charge_mode_data.decimal_places);
@@ -282,13 +281,11 @@ void charge_mode_wait_for_complete() {
 
             // NEW: When the coarse trickler stops, move the servo gate to a configured ratio
             // Ratio convention: 0.0 = open, 1.0 = close
-            if (servo_gate.gate_state != GATE_DISABLED) {
+            if (servo_gate.eeprom_servo_gate_config.servo_gate_enable) {
                 float r = charge_mode_config.eeprom_charge_mode_data.coarse_stop_gate_ratio;
-                if (r < 0.0f) r = 0.0f;
-                if (r > 1.0f) r = 1.0f;
+
                 servo_gate_set_ratio(r, false); // don't block the charge loop
             }
-
             // TODO: When turning off the coarse trickler, also move reverse to back off some powder
         }
     
@@ -328,12 +325,13 @@ void charge_mode_wait_for_complete() {
     last_charge_elapsed_seconds = (float)(elapsed_ticks * portTICK_PERIOD_MS) / 1000.0f;
 
     // Close the gate if the servo gate is present
-    if (servo_gate.gate_state != GATE_DISABLED) {
-        servo_gate_set_state(GATE_CLOSE, true);
+    if (servo_gate.eeprom_servo_gate_config.servo_gate_enable) {
+    servo_gate_set_ratio(SERVO_GATE_RATIO_CLOSED, true);
     }
 
     // Precharge
-    if (charge_mode_config.eeprom_charge_mode_data.precharge_enable && servo_gate.gate_state != GATE_DISABLED) {
+    if (charge_mode_config.eeprom_charge_mode_data.precharge_enable &&
+    servo_gate.eeprom_servo_gate_config.servo_gate_enable) {
         // Set a fixed delay between closing the gate and precharge to allow the gate to fully close
         vTaskDelay(pdMS_TO_TICKS(500));
 
