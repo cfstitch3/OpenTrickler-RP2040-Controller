@@ -71,7 +71,7 @@ static void _servo_gate_set_current_state(float open_ratio) {
 
 
 
-void servo_gate_set_ratio(gate_state_t ratio, bool block_wait) {
+void servo_gate_set_ratio(gate_ratio_t ratio, bool block_wait) {
     float r = (ratio == SERVO_GATE_RATIO_DISABLED) ? SERVO_GATE_RATIO_DISABLED : clamp01(ratio);
     
     xSemaphoreTake(servo_gate.move_ready_semphore, 0); 
@@ -90,31 +90,31 @@ void servo_gate_control_task(void *p) {
     float prev_open_ratio = UNKNOWN_RATIO;
 
     while (true) {
-        gate_state_t cmd;
-        xQueueReceive(servo_gate.control_queue, &cmd, portMAX_DELAY);
+        gate_ratio_t new_ratio;
+        xQueueReceive(servo_gate.control_queue, &new_ratio, portMAX_DELAY);
 
         // --- DISABLE ---
-        if (cmd.ratio == SERVO_GATE_RATIO_DISABLED) {            
+        if (new_ratio == SERVO_GATE_RATIO_DISABLED) {
             servo_gate.gate_state = GATE_DISABLED;
 
-            // Do NOT touch prev_open_ratio here (keeps last ratio for ramp continuity)
+            // Do NOT modify prev_open_ratio
             xSemaphoreGive(servo_gate.move_ready_semphore);
             continue;
         }
 
-        // Normal ratio move
-        float new_open_ratio = clamp01(cmd.ratio);
+        // Clamp to valid range
+        float new_open_ratio = clamp01((float)new_ratio);
 
         // First valid move: set immediately
         if (prev_open_ratio == UNKNOWN_RATIO) {
             _servo_gate_set_current_state(new_open_ratio);
         } else {
-            // If no actual change, skip ramp
+            // Skip ramp if no change
             if (fabsf(new_open_ratio - prev_open_ratio) > 0.0001f) {
+
                 float delta = new_open_ratio - prev_open_ratio;
 
-                // open_ratio: 0=open, 1=closed
-                // delta < 0 => moving toward OPEN
+                // 0 = open, 1 = closed
                 float speed = (delta < 0.0f)
                     ? servo_gate.eeprom_servo_gate_config.shutter_open_speed_pct_s
                     : servo_gate.eeprom_servo_gate_config.shutter_close_speed_pct_s;
@@ -144,20 +144,18 @@ void servo_gate_control_task(void *p) {
             }
         }
 
-        // Update discrete reported state (optional but handy for UI)
+        // Update discrete state for reporting/UI
         if (new_open_ratio <= 0.0001f) {
             servo_gate.gate_state = GATE_OPEN;
         } else if (new_open_ratio >= 0.9999f) {
             servo_gate.gate_state = GATE_CLOSE;
-        } else {
-            // In-between: choose what you want to report.
-            // Option A: keep previous discrete state
-            // Option B: leave as-is
-            
         }
 
+        // Save last ratio
         prev_open_ratio = new_open_ratio;
+        servo_gate.gate_ratio = (gate_ratio_t)new_open_ratio;
 
+        // Signal completion
         xSemaphoreGive(servo_gate.move_ready_semphore);
     }
 }
@@ -217,7 +215,7 @@ bool servo_gate_init() {
     pwm_init(pwm_gpio_to_slice_num(SERVO1_PWM_PIN), &cfg, true);
 
     // Start the RTOS task and queue
-    servo_gate.control_queue = xQueueCreate(1, sizeof(servo_gate_cmd_t));
+    servo_gate.control_queue = xQueueCreate(1, sizeof(gate_ratio_t));
     servo_gate.move_ready_semphore = xSemaphoreCreateBinary();
 
     xTaskCreate(
