@@ -95,19 +95,12 @@
                         <div class="divider">Gate Control</div>
                     </div>
                       
-					
-
-                   
-                            <!--<button class="btn btn-primary"
-                                    onclick="servoGateApplyRatioFromUi()"> 
-                                Set
-                            </button>-->
 				</div>				
                     
-				<div class="grid grid-cols-3 gap-20"> 
+				<div class="grid grid-cols-3 gap-2"> 
 					<button class="btn btn-neutral" onclick="servoGateSetState(2)">Gate Open</button>
 					
-					<!-- <div class="grid grid-cols-3 gap-2"> -->
+					
 					<input id="servoGateRatioNumber"
 						   type="number"
 						   min="0"
@@ -115,18 +108,8 @@
 						   step="0.001"
 						   value="0.500"
 						   class="input input-bordered input-primary"
-						   oninput="onServoGateRatioNumberInput(); debouncedServoGateRatioSendFromNumber();" />
-
-
-					<!--<button class="btn btn-primary"
-							onclick="servoGateApplyRatioFromUi()"> 
-						Set
-					</button>-->
-				<!-- </div> -->
-					<!--<button class="btn btn-neutral" onclick="servoGateSetRatio(0.250)">0.250</button>
-					<button class="btn btn-neutral" onclick="servoGateSetRatio(0.500)">0.500</button>
-					<button class="btn btn-neutral" onclick="servoGateSetRatio(0.750)">0.750</button>-->
-					
+						   readonly />
+								
 					<button class="btn btn-neutral" onclick="servoGateSetState(1)">Gate Close</button>
 				</div>
 				<div></div>

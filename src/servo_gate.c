@@ -81,11 +81,17 @@ void servo_gate_set_ratio(float ratio, bool block_wait) {
         .block_wait = block_wait
     };
 
-    xQueueSend(servo_gate.control_queue, &cmd, portMAX_DELAY);
+    // latest-wins (no pile-up, no blocking)
+    xQueueOverwrite(servo_gate.control_queue, &cmd);
 
     if (block_wait) {
         xSemaphoreTake(servo_gate.move_ready_semphore, portMAX_DELAY);
     }
+}
+
+static bool _try_get_latest_cmd(servo_gate_cmd_t *out) {
+    // Non-blocking receive; with a 1-deep queue this effectively grabs the latest
+    return xQueueReceive(servo_gate.control_queue, out, 0) == pdTRUE;
 }
 
 void servo_gate_control_task(void *p) {
@@ -99,74 +105,98 @@ void servo_gate_control_task(void *p) {
         xQueueReceive(servo_gate.control_queue, &cmd, portMAX_DELAY);
 
         // --- DISABLE ---
-        if (cmd.ratio == SERVO_GATE_RATIO_DISABLED) {            
+        if (cmd.ratio == SERVO_GATE_RATIO_DISABLED) {
             servo_gate.gate_state = GATE_DISABLED;
-
-            // Do NOT touch prev_open_ratio here (keeps last ratio for ramp continuity)
             xSemaphoreGive(servo_gate.move_ready_semphore);
             continue;
         }
 
-        // Normal ratio move
         float new_open_ratio = clamp01(cmd.ratio);
+        
 
         // First valid move: set immediately
         if (prev_open_ratio == UNKNOWN_RATIO) {
             _servo_gate_set_current_state(new_open_ratio);
-        } else {
-            // If no actual change, skip ramp
-            if (fabsf(new_open_ratio - prev_open_ratio) > 0.0001f) {
-                float delta = new_open_ratio - prev_open_ratio;
+            prev_open_ratio = new_open_ratio;   // important!
+        }
+        // Move if changed enough to matter
+        else if (fabsf(new_open_ratio - prev_open_ratio) > 0.0001f) {
 
-                // open_ratio: 0=open, 1=closed
-                // delta < 0 => moving toward OPEN
-                float speed = (delta < 0.0f)
-                    ? servo_gate.eeprom_servo_gate_config.shutter_open_speed_pct_s
-                    : servo_gate.eeprom_servo_gate_config.shutter_close_speed_pct_s;
+            float delta = new_open_ratio - prev_open_ratio;
 
-                if (speed < 0.0001f) speed = 0.0001f;
+            float speed = (delta < 0.0f)
+                ? servo_gate.eeprom_servo_gate_config.shutter_open_speed_pct_s
+                : servo_gate.eeprom_servo_gate_config.shutter_close_speed_pct_s;
 
-                uint32_t ramp_time_us = (uint32_t)(fabsf(delta / speed) * 1e6f);
+            if (speed < 0.0001f) speed = 0.0001f;
 
-                if (ramp_time_us < 1000) {
-                    _servo_gate_set_current_state(new_open_ratio);
-                } else {
-                    uint32_t start_time = time_us_32();
-                    uint32_t stop_time  = start_time + ramp_time_us;
+            uint32_t ramp_time_us = (uint32_t)(fabsf(delta / speed) * 1e6f);
 
-                    while (true) {
-                        uint32_t current_time = time_us_32();
-                        if (current_time > stop_time) break;
+            // Very small moves: snap
+            if (ramp_time_us < 1000) {
+                _servo_gate_set_current_state(new_open_ratio);
+                prev_open_ratio = new_open_ratio;
+            } else {
+                // latest-wins, CPU-friendly step ramp
+                float target_ratio = new_open_ratio;
+                ramped = true;
 
-                        float percentage = (current_time - start_time) / (float)ramp_time_us;
-                        float current_ratio = prev_open_ratio + delta * percentage;
+                while (fabsf(target_ratio - prev_open_ratio) > 0.0001f) {
 
-                        _servo_gate_set_current_state(current_ratio);
+                    // Update target if newer cmd arrives (latest wins)
+                    servo_gate_cmd_t newer;
+                    if (_try_get_latest_cmd(&newer)) {
+                        if (newer.ratio == SERVO_GATE_RATIO_DISABLED) {
+                            servo_gate.gate_state = GATE_DISABLED;
+                            xSemaphoreGive(servo_gate.move_ready_semphore);
+                            goto next_iteration;
+                        }
+                        target_ratio = clamp01(newer.ratio);
                     }
 
-                    _servo_gate_set_current_state(new_open_ratio);
+                    float delta2 = target_ratio - prev_open_ratio;
+
+                    float speed2 = (delta2 < 0.0f)
+                        ? servo_gate.eeprom_servo_gate_config.shutter_open_speed_pct_s
+                        : servo_gate.eeprom_servo_gate_config.shutter_close_speed_pct_s;
+
+                    if (speed2 < 0.0001f) speed2 = 0.0001f;
+
+                    float step = speed2 * 0.001f;  // per 1ms tick
+
+                    if (fabsf(delta2) <= step) {
+                        prev_open_ratio = target_ratio;
+                    } else {
+                        prev_open_ratio += (delta2 > 0.0f) ? step : -step;
+                    }
+
+                    _servo_gate_set_current_state(prev_open_ratio);
+                    vTaskDelay(pdMS_TO_TICKS(1));
                 }
+
+                _servo_gate_set_current_state(target_ratio);
+                new_open_ratio = target_ratio;
+                // prev_open_ratio already == target_ratio here
             }
         }
+        // No meaningful change: keep position; just update prev to the command target (harmless)
+        else {
+            prev_open_ratio = new_open_ratio;
+        }
 
-        // Update discrete reported state (optional but handy for UI)
+        // Update discrete state (optional)
         if (new_open_ratio <= 0.0001f) {
             servo_gate.gate_state = GATE_OPEN;
         } else if (new_open_ratio >= 0.9999f) {
             servo_gate.gate_state = GATE_CLOSE;
-        } else {
-            // In-between: choose what you want to report.
-            // Option A: keep previous discrete state
-            // Option B: leave as-is
-            
-        }
-
-        prev_open_ratio = new_open_ratio;
+        }     
 
         xSemaphoreGive(servo_gate.move_ready_semphore);
+
+    next_iteration:
+        ;
     }
 }
-
 
 bool servo_gate_config_save(void) {
     bool is_ok = save_config(EEPROM_SERVO_GATE_CONFIG_BASE_ADDR, &servo_gate.eeprom_servo_gate_config, sizeof(servo_gate.eeprom_servo_gate_config));
@@ -204,7 +234,7 @@ bool servo_gate_init() {
 
     is_ok = servo_gate_config_init();
 
-    // Initialize pins
+   // Initialize pins
     gpio_set_function(SERVO0_PWM_PIN, GPIO_FUNC_PWM);
     gpio_set_function(SERVO1_PWM_PIN, GPIO_FUNC_PWM);
 
@@ -221,9 +251,12 @@ bool servo_gate_init() {
     pwm_init(pwm_gpio_to_slice_num(SERVO0_PWM_PIN), &cfg, true);
     pwm_init(pwm_gpio_to_slice_num(SERVO1_PWM_PIN), &cfg, true);
 
-    // Start the RTOS task and queue
+    // Start the RTOS task and queue (mailbox)
     servo_gate.control_queue = xQueueCreate(1, sizeof(servo_gate_cmd_t));
+    configASSERT(servo_gate.control_queue != NULL);
+
     servo_gate.move_ready_semphore = xSemaphoreCreateBinary();
+    configASSERT(servo_gate.move_ready_semphore != NULL);
 
     xTaskCreate(
         servo_gate_control_task,
