@@ -139,8 +139,7 @@ void servo_gate_control_task(void *p) {
             } else {
                 // latest-wins, CPU-friendly step ramp
                 float target_ratio = new_open_ratio;
-                ramped = true;
-
+                
                 while (fabsf(target_ratio - prev_open_ratio) > 0.0001f) {
 
                     // Update target if newer cmd arrives (latest wins)
