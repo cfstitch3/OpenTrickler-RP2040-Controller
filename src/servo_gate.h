@@ -15,6 +15,8 @@
 #define SERVO_GATE_RATIO_CLOSED     (1.0f)
 #define SERVO_GATE_RATIO_DISABLED   (-1.0f)
 
+typedef float gate_ratio_t;
+
 typedef enum {
     GATE_DISABLED = 0,
     GATE_CLOSE,
