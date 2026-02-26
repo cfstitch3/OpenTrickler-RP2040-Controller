@@ -32,10 +32,11 @@ typedef enum {
  * Any value between 0.0 and 1.0 is proportional.
  */
  
-typedef struct {
+/*typedef struct {
     float ratio;
     bool block_wait;
 } servo_gate_cmd_t;
+ */
 
 typedef struct {
     uint16_t servo_gate_config_rev;
@@ -52,7 +53,7 @@ typedef struct {
 typedef struct {
     eeprom_servo_gate_config_t eeprom_servo_gate_config;
     gate_state_t gate_state;
-
+    gate_ratio_t gate_ratio;  // 0.0 = OPEN, 1.0 = CLOSED, -1.0 = DISABLED
     // RTOS control
     TaskHandle_t control_task_handler;
     QueueHandle_t control_queue;

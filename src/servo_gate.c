@@ -2,7 +2,6 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
-
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
 #include "configuration.h"
@@ -72,16 +71,12 @@ static void _servo_gate_set_current_state(float open_ratio) {
 
 
 
-void servo_gate_set_ratio(float ratio, bool block_wait) {
-    // Clear the semaphore state
-    xSemaphoreTake(servo_gate.move_ready_semphore, 0);
-
-    servo_gate_cmd_t cmd = {
-        .ratio = (ratio == SERVO_GATE_RATIO_DISABLED) ? SERVO_GATE_RATIO_DISABLED : clamp01(ratio),
-        .block_wait = block_wait
-    };
-
-    xQueueSend(servo_gate.control_queue, &cmd, portMAX_DELAY);
+void servo_gate_set_ratio(gate_state_t ratio, bool block_wait) {
+    float r = (ratio == SERVO_GATE_RATIO_DISABLED) ? SERVO_GATE_RATIO_DISABLED : clamp01(ratio);
+    
+    xSemaphoreTake(servo_gate.move_ready_semphore, 0); 
+    
+    xQueueOverwrite(servo_gate.control_queue, &r);
 
     if (block_wait) {
         xSemaphoreTake(servo_gate.move_ready_semphore, portMAX_DELAY);
@@ -95,7 +90,7 @@ void servo_gate_control_task(void *p) {
     float prev_open_ratio = UNKNOWN_RATIO;
 
     while (true) {
-        servo_gate_cmd_t cmd;
+        gate_state_t cmd;
         xQueueReceive(servo_gate.control_queue, &cmd, portMAX_DELAY);
 
         // --- DISABLE ---
